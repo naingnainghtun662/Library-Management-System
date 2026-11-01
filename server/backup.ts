@@ -14,7 +14,7 @@
  * ============================================================================
  */
 import type { Pool } from 'mysql2/promise';
-import { TABLE_DEFINITIONS } from './database.ts';
+import { TABLE_DEFINITIONS } from './database.js';
 
 export async function buildSqlBackup(pool: Pool): Promise<string> {
   const lines: string[] = [

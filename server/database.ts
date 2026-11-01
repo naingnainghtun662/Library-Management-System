@@ -20,7 +20,7 @@
 import mysql, { Pool, PoolOptions } from 'mysql2/promise';
 import { drizzle, MySql2Database } from 'drizzle-orm/mysql2';
 import bcrypt from 'bcryptjs';
-import * as schema from '../src/db/librarydb.ts';
+import * as schema from '../src/db/librarydb.js';
 
 /** The Drizzle database object, typed with our schema so `db.query.books...` etc. work. */
 export type LibraryDb = MySql2Database<typeof schema>;
