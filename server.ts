@@ -524,15 +524,50 @@ async function startServer() {
     }
   });
 
-  /** PUT /api/config/:key: admin changes a setting (e.g. DAILY_FINE_RATE). Used immediately by the fine/loan logic. */
+  /**
+   * Allowed ranges for the numeric library rules. The server checks these itself,
+   * so a bad value (e.g. a negative fine or 0 loan days) can't be saved, even by
+   * calling the API directly without the Settings screen.
+   */
+  const CONFIG_RULES: Record<string, { min: number; max: number; integer: boolean; label: string }> = {
+    LOAN_DURATION_DAYS: { min: 1, max: 365, integer: true, label: 'Loan duration' },
+    DAILY_FINE_RATE: { min: 0, max: 1000, integer: false, label: 'Daily fine rate' },
+    MAX_LOANS_PER_USER: { min: 1, max: 100, integer: true, label: 'Maximum loans per student' },
+  };
+
+  /**
+   * PUT /api/config/:key: admin changes a setting (used by the Admin → Settings tab).
+   * The new value is used immediately by the fine and loan logic.
+   */
   app.put('/api/config/:key', authenticateToken, authorize(['admin']), async (req: any, res) => {
     try {
-      await db.update(schema.systemConfig)
-        .set({ value: String(req.body.value), updatedAt: new Date() })
-        .where(eq(schema.systemConfig.key, req.params.key));
+      const key = req.params.key;
+      const value = String(req.body.value ?? '').trim();
 
-      const [config] = await db.select().from(schema.systemConfig).where(eq(schema.systemConfig.key, req.params.key));
-      await logAction(req.user.id, 'CONFIG_UPDATE', `Updated config key: ${req.params.key}`);
+      const [existing] = await db.select().from(schema.systemConfig).where(eq(schema.systemConfig.key, key));
+      if (!existing) return res.status(404).json({ error: `Unknown setting: ${key}` });
+
+      // Validate numeric rules
+      const rule = CONFIG_RULES[key];
+      if (rule) {
+        const number = Number(value);
+        const valid = value !== '' && Number.isFinite(number) && number >= rule.min && number <= rule.max
+          && (!rule.integer || Number.isInteger(number));
+        if (!valid) {
+          return res.status(400).json({
+            error: `${rule.label} must be ${rule.integer ? 'a whole number' : 'a number'} between ${rule.min} and ${rule.max}`,
+          });
+        }
+      } else if (value === '') {
+        return res.status(400).json({ error: 'Value cannot be empty' });
+      }
+
+      await db.update(schema.systemConfig)
+        .set({ value, updatedAt: new Date() })
+        .where(eq(schema.systemConfig.key, key));
+
+      const [config] = await db.select().from(schema.systemConfig).where(eq(schema.systemConfig.key, key));
+      await logAction(req.user.id, 'CONFIG_UPDATE', `Changed ${key} from "${existing.value}" to "${value}"`);
       res.json(config);
     } catch (error: any) {
       sendError(res, error, 400);

@@ -183,6 +183,15 @@ async function main() {
   check('T18', 'A member with an active loan request cannot be deleted', deleteActive.status === 400);
   await api('POST', `/borrow/reject/${firstLoan.body.id}`, librarian); // tidy up
 
+  // ------------------------------------------------- settings validation
+  const negativeFine = await api('PUT', '/config/DAILY_FINE_RATE', admin, { value: '-1' });
+  const zeroDays = await api('PUT', '/config/LOAN_DURATION_DAYS', admin, { value: '0' });
+  const fractionLimit = await api('PUT', '/config/MAX_LOANS_PER_USER', admin, { value: '2.5' });
+  check('T19', 'Settings reject invalid values (negative fine, 0 days, fractional limit)',
+    negativeFine.status === 400 && zeroDays.status === 400 && fractionLimit.status === 400);
+  const librarianSetting = await api('PUT', '/config/DAILY_FINE_RATE', librarian, { value: '1' });
+  check('T20', 'Only an admin can change settings', librarianSetting.status === 403);
+
   // ---------------------------------------------- T2 last: login lock-out
   const attempts = [];
   for (let i = 0; i < 4; i++) {

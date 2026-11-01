@@ -44,7 +44,7 @@ A web-based library management system using a **three-tier architecture**:
 | `books` | Catalogue; `quantity` owned, `available_quantity` on shelf | `category_id` → categories (set null on delete) |
 | `borrow_records` | Loan ledger: status, dates, fine | `user_id` → users, `book_id` → books |
 | `logs` | Audit trail of every important action | `user_id` → users (set null on delete) |
-| `system_config` | Library rules: loan days, fine rate, max loans (admin can change via `PUT /api/config/:key`; there is no settings screen yet) | – |
+| `system_config` | Library rules: loan days, fine rate, max loans (edited on Admin → Settings) | – |
 | `serial_issues` | Issues of magazines/journals | `book_id` → books |
 
 The table definitions are in `server/database.ts` (SQL) and `src/db/librarydb.ts` (Drizzle ORM).
@@ -85,5 +85,5 @@ Admins can download a full `.sql` backup (`server/backup.ts`) containing DROP/CR
 | Authentication | Login / Sign-up, Profile | `/api/auth/*` |
 | Catalogue | Catalogue (students), Manage Books (staff) | `/api/books`, `/api/categories`, `/api/serials/issues` |
 | Circulation | Borrow History | `/api/borrow/*` |
-| Administration | Admin (members, backup) | `/api/admin/*`, `/api/config/*` (API only) |
+| Administration | Admin (members, backup, settings) | `/api/admin/*`, `/api/config/*` |
 | Reporting | Dashboard / Analytics | `/api/dashboard/stats`, `/api/reports/detailed` |

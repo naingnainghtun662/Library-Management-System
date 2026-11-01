@@ -4,7 +4,7 @@
 **Reviewed:** 1 November 2026 · **Updated:** 1 November 2026 (after the MySQL migration and bug fixes)
 **Final deadline:** **30 November 2026, 9am UK time**
 
-> **Status update.** The app now uses **MySQL**, as promised in the proposal and interim report: XAMPP on a PC, Aiven in the cloud, Vercel for the website. All six bugs found in the first review are **fixed and retested**. All code files have beginner-friendly comments. The screens are unchanged, except that the sign-up "Access Role" list now offers only *Academic Student* (security fix B2). 20 automated tests pass on both MySQL 8 and MariaDB 10.4 (the database XAMPP ships).
+> **Status update.** The app now uses **MySQL**, as promised in the proposal and interim report: XAMPP on a PC, Aiven in the cloud, Vercel for the website. All six bugs found in the first review are **fixed and retested**, and an **Admin → Settings** tab has been added (interim Fig 21). All code files have beginner-friendly comments. The screens are unchanged, except that the sign-up "Access Role" list now offers only *Academic Student* (security fix B2). 22 automated tests pass (20 of them also run on MariaDB 10.4, the database XAMPP ships).
 
 Sources reviewed: the proposal (28/03/2026), the interim report (26/05/2026), the *ISP Final Report Guidance – Autumn 2026*, and the code in this repository.
 
@@ -37,12 +37,11 @@ Sources reviewed: the proposal (28/03/2026), the interim report (26/05/2026), th
 | Borrow workflow: request → approve/reject → return request → confirm return | ✅ Done; **transaction-safe with row locking** |
 | Overdue detection and fines (rate, loan length, loan limit read from `system_config`) | ✅ Done |
 | Dashboard and reports (top books, top borrowers, categories, overdue, monthly trend, low stock) | ✅ Done |
-| Admin: members (any role), database backup download | ✅ Done |
+| Admin: members (any role), database backup download, **settings** (loan days, fine rate, loan limit) | ✅ Done (settings tab added Nov 2026) |
 | Security: Helmet, rate limiting, audit log, admin-only staff creation | ✅ Done |
 | **MySQL database** (XAMPP locally, Aiven in the cloud) | ✅ Done (Nov 2026) |
-| Automated API tests (`npm run test:api`, 20 cases) | ✅ Done (Nov 2026) |
+| Automated API tests (`npm run test:api`, 22 cases) | ✅ Done (Nov 2026) |
 | **Reservations** (listed in the interim requirements; shown in Figs 12, 18, 25) | ❌ Not in the current code |
-| **Settings screen** (interim Fig 21). The settings exist in the database and API, but there is **no screen** for them in the current front end | ❌ Not in the current code |
 
 **Against the proposal's technical objectives:** centralised database ✅ · find/borrow/return with one copy held by one user ✅ (proven by test T5) · backups ✅ (manual download; "automatic backups" was promised, though Aiven also backs up the cloud database automatically) · reports on borrowed and overdue books ✅.
 
@@ -55,7 +54,7 @@ Sources reviewed: the proposal (28/03/2026), the interim report (26/05/2026), th
 | Database | ✅ **Now MySQL**, as stated in the proposal and interim. | Nothing to justify. Describe it as planned. For honesty (and good Ch 5 material), you can say an SQLite/Turso version was tried during development and replaced with MySQL to meet the original design. |
 | "JSON Ledger Backup Storage" (interim tech table) | Doesn't exist. | Describe the SQL backup download instead. |
 | Reservations | Not built. | State in Ch 7 that it was descoped, and why (time; the "request" step already reserves a copy). Treat it as future work. |
-| Settings screen (interim Fig 21) | The rules are stored in `system_config` and **used** by the app, but there's no screen to edit them. | Either say settings are managed by the admin through the API (and list a settings screen as future work), or ask us to add a small settings screen. |
+| Settings screen (interim Fig 21) | ✅ Added as **Admin → Settings**: loan duration, daily fine rate, loan limit. The server validates the values and logs every change. | Use a fresh screenshot of it in the report. |
 | Interim screenshots | Screens look the same, apart from the student-only role list on sign-up. | Retake screenshots for the final report from the current app. Mention the sign-up change as a security improvement found by testing. |
 | AI | Gemini boilerplate removed. The app has no AI features. | Don't claim any AI features. |
 
@@ -166,7 +165,7 @@ He should be able to say this section **out loud** in the demo. It can be adapte
 | 4 Design | 1,100 | ERD, architecture diagram | Justify design decisions (MySQL/InnoDB for transactions, JWT, RBAC); state diagram (§5.5 / `ARCHITECTURE.md` 4.1); deployment diagram (`DEPLOYMENT_GUIDE.md`); GUI design; security design |
 | 5 Implementation | 1,300 | Screenshots (retake them) | Folder structure (§5.2), key code snippets (approve transaction, auth middleware), deployment, demo data, **problems encountered** (B1–B6, the MySQL migration, the MariaDB `LATERAL` join issue), tools used, including AI |
 | 6 Testing & Results | 900 | – | Test table (§8), output of `npm run test:api`, browser tests, ideally a small user test (2–3 classmates + questionnaire in an appendix) |
-| 7 Conclusions & Future Work | 900 | – | **Most important for the grade.** Go through each objective (achieved / partly / not, and why). Learning. Future work: reservations, settings screen, email reminders, barcodes, scheduled automatic backups |
+| 7 Conclusions & Future Work | 900 | – | **Most important for the grade.** Go through each objective (achieved / partly / not, and why). Learning. Future work: reservations, email reminders, barcodes, scheduled automatic backups |
 | References / Appendices | – | Remove duplicate references | Use case descriptions, test cases, install guide, questionnaire |
 
 ---
@@ -182,7 +181,7 @@ He should be able to say this section **out loud** in the demo. It can be adapte
 
 ## 8. Test results (1 November 2026, after fixes)
 
-Run with `npm run test:api` against **MySQL 8.0** and **MariaDB 10.4** (XAMPP). **20/20 passed on both.** A real browser was also used to check sign-up, reserve, approve, enroll a librarian, the backup download and the dashboard charts.
+Run with `npm run test:api`. **22/22 passed on MySQL 8.0**; the original 20 also passed on **MariaDB 10.4** (XAMPP). A real browser was also used to check sign-up, reserve, approve, enroll a librarian, the backup download, the dashboard charts and the Settings tab.
 
 | ID | Test | Before fixes | After |
 |---|---|---|---|
@@ -202,6 +201,8 @@ Run with `npm run test:api` against **MySQL 8.0** and **MariaDB 10.4** (XAMPP). 
 | T15 / T16 | Fine can't be settled before the return; a paid fine stays paid | ❌ fine came back | ✅ |
 | T17 | Loan limit enforced | ❌ | ✅ |
 | T18 | Member with active loans can't be deleted | not run | ✅ |
+| T19 | Settings reject invalid values (negative fine, 0 days, fractional limit) | – (no screen) | ✅ |
+| T20 | Only an admin can change settings | – | ✅ |
 | – | Backup from MySQL 8 restores into MariaDB 10.4 | – | ✅ |
 
 ---
@@ -210,7 +211,7 @@ Run with `npm run test:api` against **MySQL 8.0** and **MariaDB 10.4** (XAMPP). 
 
 | Week | Tasks |
 |---|---|
-| **1 (2–8 Nov)** | Create the Aiven database, set the Vercel variables, redeploy, and add the URL to the README (`DEPLOYMENT_GUIDE.md`). Install XAMPP and run the app locally. Read through the commented code. Decide on the settings screen (keep as future work, or add it). |
+| **1 (2–8 Nov)** | Create the Aiven database, set the Vercel variables, redeploy, and add the URL to the README (`DEPLOYMENT_GUIDE.md`). Install XAMPP and run the app locally. Read through the commented code. |
 | **2 (9–15 Nov)** | Run `npm run test:api` and take screenshots for Ch 6. Short user test with 2–3 people. Retake UI screenshots. Start Ch 4 and Ch 5. |
 | **3 (16–22 Nov)** | Write Ch 1–3 (mostly from the interim), Ch 6 and Ch 7. Draw the new diagrams (deployment, state, activity). |
 | **4 (23–29 Nov)** | Abstract, references, formatting check, signed declaration. Record the 10-minute demo (problem → architecture → live borrow flow → reports → security → future work). Test the zip on another PC. **Submit before 30 Nov, 9am UK.** |

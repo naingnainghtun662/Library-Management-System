@@ -1,21 +1,23 @@
 /**
  * SYSTEM ADMINISTRATION PAGE (admin only)
  * ----------------------------------------------------------------------------
- * Two tabs:
+ * Three tabs:
  *   1. Membership:    list, search, add ("Enroll"), edit and delete members of any role.
  *                     New accounts go to POST /api/admin/users (admin-only), the only
  *                     way to create librarian or admin accounts.
  *   2. Database Dump: downloads a full MySQL backup (.sql) and explains how to restore it.
+ *   3. Settings:      library rules (loan days, fine rate, loan limit); see components/LibrarySettings.tsx.
  */
 import React, { useState, useEffect } from 'react';
-import { Users, Search, UserMinus, Edit3, Plus, X, User as UserIcon, Database, Download } from 'lucide-react';
+import { Users, Search, UserMinus, Edit3, Plus, X, User as UserIcon, Database, Download, Settings } from 'lucide-react';
 import api from '../lib/api';
 import { User as UserType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import LibrarySettings from '../components/LibrarySettings';
 
 export default function AdminManagement() {
   const [users, setUsers] = useState<UserType[]>([]);
-  const [activeTab, setActiveTab] = useState<'users' | 'database'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'database' | 'settings'>('users');
   const [downloading, setDownloading] = useState(false);
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -280,6 +282,7 @@ export default function AdminManagement() {
           <div className="flex bg-white p-1.5 rounded-2xl border border-[#14141408] shadow-sm overflow-x-auto no-scrollbar max-w-full">
             <TabButton active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<Users size={14} />} label="Membership" />
             <TabButton active={activeTab === 'database'} onClick={() => setActiveTab('database')} icon={<Database size={14} />} label="Database Dump" />
+            <TabButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings size={14} />} label="Settings" />
           </div>
           {activeTab === 'users' && (
             <button 
@@ -301,6 +304,7 @@ export default function AdminManagement() {
         >
           {activeTab === 'users' && renderMembership()}
           {activeTab === 'database' && renderDatabaseBackup()}
+          {activeTab === 'settings' && <LibrarySettings />}
         </motion.div>
       </AnimatePresence>
 

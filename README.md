@@ -84,7 +84,7 @@ See [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for how it is deployed.
 │   ├── lib/api.ts         HTTP helper that attaches the login token to every request
 │   ├── db/librarydb.ts    Database schema for Drizzle ORM (matches the ERD)
 │   ├── pages/             One file per screen (Login, Catalogue, History, Books, Admin...)
-│   └── components/        Navbar and analytics charts
+│   └── components/        Navbar, analytics charts, library settings tab
 ├── tests/api-test.mjs     Automated API tests (Chapter 6 evidence)
 ├── restore_database.sql   Ready-to-import MySQL database with demo data
 ├── ARCHITECTURE.md        System architecture and design notes
