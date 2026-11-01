@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local SQLite database (auto-created on first run)
+library.db
