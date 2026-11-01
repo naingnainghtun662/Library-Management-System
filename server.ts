@@ -5,6 +5,7 @@
  */
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -14,9 +15,10 @@ import { createServer as createViteServer } from 'vite';
 import { drizzle as drizzleBetterSqlite } from 'drizzle-orm/better-sqlite3';
 import { drizzle as drizzleLibSql } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
-import Database from 'better-sqlite3';
 import { eq, and, or, like, sql, desc, asc, inArray } from 'drizzle-orm';
 import * as schema from './src/db/librarydb.ts';
+
+let Database: any = null;
 
 // ============================================================================
 // DUAL-MODE DATABASE CONFIGURATION (Turso Serverless SQL + local SQLite fallback)
@@ -29,25 +31,11 @@ let db: any;
 let sqlite: any;
 let libsqlClient: any;
 
-if (useTurso) {
-  console.log('Connecting to Cloud-Native Distributed relational database via Turso SQL API...');
-  libsqlClient = createClient({
-    url: tursoUrl!,
-    authToken: process.env.TURSO_AUTH_TOKEN,
-  });
-  db = drizzleLibSql(libsqlClient, { schema });
-} else {
-  console.log('Connecting to Local relational database via better-sqlite3 engine...');
-  const dbPath = process.env.VERCEL ? '/tmp/library.db' : 'library.db';
-  sqlite = new Database(dbPath);
-  db = drizzleBetterSqlite(sqlite, { schema });
-}
-
 /**
  * Safely executes a raw DDL command block (e.g. table creations) on both local and cloud databases.
  */
 async function executeRawSql(sqlStr: string): Promise<void> {
-  if (useTurso) {
+  if (libsqlClient) {
     await libsqlClient.execute(sqlStr);
   } else {
     sqlite.exec(sqlStr);
@@ -58,7 +46,7 @@ async function executeRawSql(sqlStr: string): Promise<void> {
  * Safely executes a raw SELECT query with parameters and returns an array of row objects.
  */
 async function rawAll(sqlStr: string, args: any[] = []): Promise<any[]> {
-  if (useTurso) {
+  if (libsqlClient) {
     const res = await libsqlClient.execute({ sql: sqlStr, args });
     return res.rows as any[];
   } else {
@@ -70,7 +58,7 @@ async function rawAll(sqlStr: string, args: any[] = []): Promise<any[]> {
  * Safely executes a raw SELECT query with parameters and returns the first row or null.
  */
 async function rawGet(sqlStr: string, args: any[] = []): Promise<any> {
-  if (useTurso) {
+  if (libsqlClient) {
     const res = await libsqlClient.execute({ sql: sqlStr, args });
     return res.rows[0] || null;
   } else {
@@ -82,7 +70,7 @@ async function rawGet(sqlStr: string, args: any[] = []): Promise<any> {
  * Safely executes raw inserts and returns the rowid increment handle.
  */
 async function rawInsert(sqlStr: string, args: any[] = []): Promise<{ lastInsertRowid: number }> {
-  if (useTurso) {
+  if (libsqlClient) {
     const res = await libsqlClient.execute({ sql: sqlStr, args });
     const lastId = res.lastInsertRowid;
     return { lastInsertRowid: lastId ? Number(lastId) : 0 };
@@ -96,7 +84,7 @@ async function rawInsert(sqlStr: string, args: any[] = []): Promise<{ lastInsert
  * Safely executes seed insertion, updates, or deletion statements.
  */
 async function rawRun(sqlStr: string, args: any[] = []): Promise<void> {
-  if (useTurso) {
+  if (libsqlClient) {
     await libsqlClient.execute({ sql: sqlStr, args });
   } else {
     sqlite.prepare(sqlStr).run(...args);
@@ -369,6 +357,171 @@ async function initDatabase() {
   }
 }
 
+/**
+ * Automatically builds a raw SQLite .sql backup script containing all current schemas
+ * and row elements, writing it locally to /restore_database.sql and /public/restore_database.sql.
+ * This guarantees the backup file matches their latest physical applet DB state dynamically!
+ */
+async function generateLocalSqlBackup() {
+  try {
+    const localDbPath = process.env.VERCEL ? '/tmp/library.db' : 'library.db';
+    const backupDb = sqlite || (Database ? new Database(localDbPath) : null);
+    let sqlContent = `-- Production Relational Database Restore Script for Turso CLI / Shell
+-- Candidate Name: Saw Pyae Phyo Kyaw
+-- Candidate ID: 200309
+-- Created: ${new Date().toISOString()}
+
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+
+-- Enable auto vacuum and clean existing structures safely
+DROP TABLE IF EXISTS serial_issues;
+DROP TABLE IF EXISTS system_config;
+DROP TABLE IF EXISTS logs;
+DROP TABLE IF EXISTS borrow_records;
+DROP TABLE IF EXISTS books;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS librarians;
+DROP TABLE IF EXISTS students;
+DROP TABLE IF EXISTS users;
+
+CREATE TABLE users (
+  user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  role TEXT NOT NULL,
+  phone TEXT,
+  communication_preferences TEXT,
+  created_at INTEGER
+);
+
+CREATE TABLE students (
+  student_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  student_code TEXT NOT NULL UNIQUE,
+  department TEXT NOT NULL,
+  year INTEGER NOT NULL
+);
+
+CREATE TABLE librarians (
+  librarian_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  employee_code TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE categories (
+  category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE books (
+  book_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  author TEXT NOT NULL,
+  isbn TEXT NOT NULL UNIQUE,
+  publisher TEXT,
+  category_id INTEGER REFERENCES categories(category_id),
+  quantity INTEGER NOT NULL DEFAULT 1,
+  available_quantity INTEGER NOT NULL DEFAULT 1,
+  shelf_location TEXT,
+  format TEXT NOT NULL DEFAULT 'Physical',
+  metadata_schema TEXT DEFAULT 'Standard',
+  metadata_record TEXT,
+  is_acquisition INTEGER DEFAULT 0,
+  acquisition_source TEXT,
+  budget_code TEXT,
+  cover_url TEXT,
+  created_at INTEGER
+);
+
+CREATE TABLE borrow_records (
+  record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  book_id INTEGER REFERENCES books(book_id),
+  borrow_date INTEGER,
+  due_date INTEGER NOT NULL,
+  return_date INTEGER,
+  status TEXT NOT NULL DEFAULT 'requested',
+  fine_amount REAL DEFAULT 0
+);
+
+CREATE TABLE logs (
+  log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  action TEXT NOT NULL,
+  details TEXT,
+  timestamp INTEGER
+);
+
+CREATE TABLE system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  description TEXT,
+  updated_at INTEGER
+);
+
+CREATE TABLE serial_issues (
+  issue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id INTEGER REFERENCES books(book_id),
+  issue_number TEXT NOT NULL,
+  volume_number TEXT,
+  publication_date INTEGER,
+  received_date INTEGER,
+  status TEXT DEFAULT 'Expected'
+);
+`;
+
+    const tables = ['users', 'students', 'librarians', 'categories', 'books', 'borrow_records', 'logs', 'system_config', 'serial_issues'];
+    
+    for (const table of tables) {
+      let rows: any[] = [];
+      try {
+        if (libsqlClient) {
+          const res = await libsqlClient.execute(`SELECT * FROM ${table}`);
+          rows = res.rows;
+        } else if (sqlite) {
+          rows = sqlite.prepare(`SELECT * FROM ${table}`).all();
+        } else {
+          rows = backupDb.prepare(`SELECT * FROM ${table}`).all();
+        }
+      } catch (err) {
+        continue;
+      }
+      
+      if (rows.length === 0) continue;
+
+      sqlContent += `\n-- Data for table ${table}\n`;
+      const cols = Object.keys(rows[0]);
+      
+      for (const row of rows) {
+        const valPlaceholders = cols.map(col => {
+          const val = row[col];
+          if (val === null) return 'NULL';
+          if (typeof val === 'number') return val.toString();
+          const escaped = val.toString().replace(/'/g, "''");
+          return `'${escaped}'`;
+        }).join(', ');
+        
+        sqlContent += `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${valPlaceholders});\n`;
+      }
+    }
+
+    sqlContent += `\nCOMMIT;\nPRAGMA foreign_keys=ON;\n`;
+    
+    if (!process.env.VERCEL) {
+      fs.writeFileSync(path.join(process.cwd(), 'restore_database.sql'), sqlContent);
+      const publicDir = path.join(process.cwd(), 'public');
+      if (fs.existsSync(publicDir)) {
+        fs.writeFileSync(path.join(publicDir, 'restore_database.sql'), sqlContent);
+      }
+      console.log('✅ Synchronized complete relational backup script -> /restore_database.sql');
+    }
+  } catch (error: any) {
+    console.error('Failed to generate local SQL dump:', error);
+  }
+}
+
 // Provide a warning indicating how to set the JWT_SECRET properly for stronger security
 if (!process.env.JWT_SECRET) {
   console.warn('WARNING: JWT_SECRET environment variable is missing. Falling back to a default secret. This is not secure for production! Please define a strong JWT_SECRET in your .env or platform deployment settings.');
@@ -381,8 +534,41 @@ const FINE_RATE_PER_DAY = 1.50; // Configurable fine rate
  * Bootstraps and starts the Express Application.
  */
 async function startServer() {
+  // Dynamically load better-sqlite3 to run correctly in CommonJS-compiled serverless runtimes
+  try {
+    if (!process.env.VERCEL) {
+      const mod = await import('better-sqlite3');
+      Database = mod.default || mod;
+    }
+  } catch (err) {
+    console.warn('better-sqlite3 dynamic load failed. Falling back to @libsql/client...', err);
+  }
+
+  if (useTurso || !Database) {
+    if (useTurso) {
+      console.log('Connecting to Cloud-Native Distributed relational database via Turso SQL API...');
+      libsqlClient = createClient({
+        url: tursoUrl!,
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      });
+    } else {
+      console.log('Connecting to Local relational database via @libsql/client (Vercel/fallback mode)...');
+      const dbPath = process.env.VERCEL ? 'file:/tmp/library.db' : 'file:library.db';
+      libsqlClient = createClient({
+        url: dbPath,
+      });
+    }
+    db = drizzleLibSql(libsqlClient, { schema });
+  } else {
+    console.log('Connecting to Local relational database via better-sqlite3 engine...');
+    const dbPath = process.env.VERCEL ? '/tmp/library.db' : 'library.db';
+    sqlite = new Database(dbPath);
+    db = drizzleBetterSqlite(sqlite, { schema });
+  }
+
   // Gracefully construct all SQL tables asynchronously before launching Express paths
   await initDatabase();
+  await generateLocalSqlBackup();
   const app = express();
   app.set('trust proxy', 1); // Trust first proxy (like Cloud Run/Nginx) for correct client IP
   const PORT = 3000;
@@ -1018,6 +1204,162 @@ async function startServer() {
       res.json({ message: 'User deleted' });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Export fully relational SQLite backup directly from browser (perfect for Vercel/Turso uploads)
+  app.get('/api/admin/database-dump', authenticateToken, authorize(['admin']), async (req, res) => {
+    try {
+      const localDbPath = process.env.VERCEL ? '/tmp/library.db' : 'library.db';
+      const backupDb = sqlite || (Database ? new Database(localDbPath) : null);
+      let sqlContent = `-- Production Relational Database Restore Script for Turso CLI / Shell
+-- Candidate Name: Saw Pyae Phyo Kyaw
+-- Candidate ID: 200309
+-- Created: ${new Date().toISOString()}
+
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+
+-- Enable auto vacuum and clean existing structures safely
+DROP TABLE IF EXISTS serial_issues;
+DROP TABLE IF EXISTS system_config;
+DROP TABLE IF EXISTS logs;
+DROP TABLE IF EXISTS borrow_records;
+DROP TABLE IF EXISTS books;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS librarians;
+DROP TABLE IF EXISTS students;
+DROP TABLE IF EXISTS users;
+
+CREATE TABLE users (
+  user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  role TEXT NOT NULL,
+  phone TEXT,
+  communication_preferences TEXT,
+  created_at INTEGER
+);
+
+CREATE TABLE students (
+  student_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  student_code TEXT NOT NULL UNIQUE,
+  department TEXT NOT NULL,
+  year INTEGER NOT NULL
+);
+
+CREATE TABLE librarians (
+  librarian_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  employee_code TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE categories (
+  category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE books (
+  book_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  author TEXT NOT NULL,
+  isbn TEXT NOT NULL UNIQUE,
+  publisher TEXT,
+  category_id INTEGER REFERENCES categories(category_id),
+  quantity INTEGER NOT NULL DEFAULT 1,
+  available_quantity INTEGER NOT NULL DEFAULT 1,
+  shelf_location TEXT,
+  format TEXT NOT NULL DEFAULT 'Physical',
+  metadata_schema TEXT DEFAULT 'Standard',
+  metadata_record TEXT,
+  is_acquisition INTEGER DEFAULT 0,
+  acquisition_source TEXT,
+  budget_code TEXT,
+  cover_url TEXT,
+  created_at INTEGER
+);
+
+CREATE TABLE borrow_records (
+  record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  book_id INTEGER REFERENCES books(book_id),
+  borrow_date INTEGER,
+  due_date INTEGER NOT NULL,
+  return_date INTEGER,
+  status TEXT NOT NULL DEFAULT 'requested',
+  fine_amount REAL DEFAULT 0
+);
+
+CREATE TABLE logs (
+  log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(user_id),
+  action TEXT NOT NULL,
+  details TEXT,
+  timestamp INTEGER
+);
+
+CREATE TABLE system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  description TEXT,
+  updated_at INTEGER
+);
+
+CREATE TABLE serial_issues (
+  issue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id INTEGER REFERENCES books(book_id),
+  issue_number TEXT NOT NULL,
+  volume_number TEXT,
+  publication_date INTEGER,
+  received_date INTEGER,
+  status TEXT DEFAULT 'Expected'
+);
+`;
+
+      const tables = ['users', 'students', 'librarians', 'categories', 'books', 'borrow_records', 'logs', 'system_config', 'serial_issues'];
+      
+      for (const table of tables) {
+        let rows: any[] = [];
+        try {
+          if (libsqlClient) {
+            const res = await libsqlClient.execute(`SELECT * FROM ${table}`);
+            rows = res.rows;
+          } else if (sqlite) {
+            rows = sqlite.prepare(`SELECT * FROM ${table}`).all();
+          } else {
+            rows = backupDb.prepare(`SELECT * FROM ${table}`).all();
+          }
+        } catch (err) {
+          continue;
+        }
+        
+        if (rows.length === 0) continue;
+
+        sqlContent += `\n-- Data for table ${table}\n`;
+        const cols = Object.keys(rows[0]);
+        
+        for (const row of rows) {
+          const valPlaceholders = cols.map(col => {
+            const val = row[col];
+            if (val === null) return 'NULL';
+            if (typeof val === 'number') return val.toString();
+            const escaped = val.toString().replace(/'/g, "''");
+            return `'${escaped}'`;
+          }).join(', ');
+          
+          sqlContent += `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${valPlaceholders});\n`;
+        }
+      }
+
+      sqlContent += `\nCOMMIT;\nPRAGMA foreign_keys=ON;\n`;
+      
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Disposition', 'attachment; filename=restore_database.sql');
+      res.send(sqlContent);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

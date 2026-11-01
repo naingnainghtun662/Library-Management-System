@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, UserMinus, Edit3, Plus, X, User as UserIcon } from 'lucide-react';
+import { Users, Search, UserMinus, Edit3, Plus, X, User as UserIcon, Database, Download } from 'lucide-react';
 import api from '../lib/api';
 import { User as UserType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function AdminManagement() {
   const [users, setUsers] = useState<UserType[]>([]);
-  const [activeTab, setActiveTab] = useState<'users'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'database'>('users');
+  const [downloading, setDownloading] = useState(false);
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
@@ -145,6 +146,105 @@ export default function AdminManagement() {
     </div>
   );
 
+  const handleDownloadBackup = () => {
+    setDownloading(true);
+    try {
+      // Direct browser window download trigger targeting our newly compiled relational SQLite endpoint
+      window.location.href = '/api/admin/database-dump';
+    } catch (err: any) {
+      alert('Failed to retrieve server dump');
+    } finally {
+      setTimeout(() => setDownloading(false), 2000);
+    }
+  };
+
+  const renderDatabaseBackup = () => (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fade-in">
+        {/* Left column: Quick Actions */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="card-modern p-8 bg-white border border-[#14141408] rounded-[2.5rem] shadow-sm space-y-6">
+            <div className="w-16 h-16 bg-[#5A5A4010] border border-[#5A5A4020] rounded-2xl flex items-center justify-center text-[#5A5A40]">
+              <Database size={32} />
+            </div>
+            <div>
+              <h3 className="text-2xl font-serif italic text-[#141414] leading-tight">Turso Relational SQL Export</h3>
+              <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mt-1">Ready-compiled restore script for Vercel & Turso DB</p>
+            </div>
+
+            <p className="text-[#141414bc] text-xs font-semibold leading-relaxed">
+              This system compiles all your physical local SQLite table registers—including profiles, book listings, categorizations, and borrow chronicles—into a single atomic, transaction-wrapped SQL migration script.
+            </p>
+
+            <button
+              type="button"
+              onClick={handleDownloadBackup}
+              disabled={downloading}
+              className="w-full flex items-center justify-center gap-2.5 py-4 bg-[#141414] hover:bg-[#5A5A40] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.01] active:scale-95 transition-all shadow-xl shadow-[#14141410] disabled:opacity-50 cursor-pointer"
+            >
+              <Download size={14} />
+              {downloading ? 'Compiling Dump...' : 'Download ready-to-restore.sql'}
+            </button>
+          </div>
+
+          <div className="card-modern p-6 bg-[#F8F8F5] border border-[#14141408] rounded-[2rem] space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
+              <div className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Local Database Engine Online</div>
+            </div>
+            <p className="text-[11px] text-[#1414148a] font-black leading-relaxed">
+              The internal relational schema file <code className="bg-white px-1.5 py-0.5 border border-black/5 rounded font-mono text-[9px] text-green-700">library.db</code> is actively synchronized. Any student portfolios, catalog enhancements, or transactions added are compiled immediately!
+            </p>
+          </div>
+        </div>
+
+        {/* Right column: Interactive commands list & Turso guide */}
+        <div className="lg:col-span-7 card-modern p-10 bg-white border border-[#14141408] rounded-[2.5rem] shadow-sm space-y-8">
+          <div>
+            <div className="text-[9px] text-[#5A5A40] font-black uppercase tracking-[0.2em] mb-1">Restoration Workflow</div>
+            <h3 className="text-2xl font-serif italic text-[#141414]">Re-loading Backup on Turso Serverless</h3>
+          </div>
+
+          <div className="space-y-6">
+            <div className="flex gap-4">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-50 text-[10px] font-black font-mono border border-gray-100 text-[#5A5A40] shrink-0">1</span>
+              <div>
+                <h4 className="text-xs font-black text-[#141414] uppercase tracking-wide">Acquire Backup File</h4>
+                <p className="text-xs text-gray-400 font-medium leading-relaxed mt-0.5">Click the dark download button on the left to extract the precompiled script <code className="bg-[#F8F8F5] px-1 py-0.5 rounded text-[10px] font-mono text-[#5A5A40]">restore_database.sql</code>.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-50 text-[10px] font-black font-mono border border-gray-100 text-[#5A5A40] shrink-0">2</span>
+              <div>
+                <h4 className="text-xs font-black text-[#141414] uppercase tracking-wide font-medium">Verify Turso CLI Session</h4>
+                <p className="text-xs text-gray-400 font-medium leading-relaxed mt-0.5">Ensure you are logged into your Turso developer console on your local workstation's shell:</p>
+                <pre className="p-3 bg-[#F8F8F5] border border-gray-100 rounded-xl text-[10px] font-mono text-gray-600 mt-2">
+                  turso auth login
+                </pre>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-50 text-[10px] font-black font-mono border border-gray-100 text-[#5A5A40] shrink-0">3</span>
+              <div>
+                <h4 className="text-xs font-black text-[#141414] uppercase tracking-wide font-medium">Perform Shell Pipe Restoration</h4>
+                <p className="text-xs text-gray-400 font-medium leading-relaxed mt-0.5 font-medium leading-relaxed">Simply pipe the generated backup script directly to your cloud project shell instance to load the structure atomic-wide:</p>
+                <pre className="p-3 bg-[#F8F8F5] border border-gray-100 rounded-xl text-[9px] font-mono text-gray-600 mt-2 leading-relaxed">
+                  # Step 3.1: Reset existing blank tables<br />
+                  turso db destroy central-lms-db<br />
+                  <br />
+                  # Step 3.2: Recreate and load structures cleanly in one command!<br />
+                  turso db create central-lms-db --from-file restore_database.sql
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
 
 
   return (
@@ -158,13 +258,16 @@ export default function AdminManagement() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex bg-white p-1.5 rounded-2xl border border-[#14141408] shadow-sm overflow-x-auto no-scrollbar max-w-full">
             <TabButton active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<Users size={14} />} label="Membership" />
+            <TabButton active={activeTab === 'database'} onClick={() => setActiveTab('database')} icon={<Database size={14} />} label="Database Dump" />
           </div>
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-[#141414] text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-[#5A5A40] transition-all shadow-xl shadow-[#1414141a] active:scale-95"
-          >
-            <Plus size={16} /> Enroll
-          </button>
+          {activeTab === 'users' && (
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-5 py-3 bg-[#141414] text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-[#5A5A40] transition-all shadow-xl shadow-[#1414141a] active:scale-95"
+            >
+              <Plus size={16} /> Enroll
+            </button>
+          )}
         </div>
       </div>
 
@@ -176,6 +279,7 @@ export default function AdminManagement() {
            exit={{ opacity: 0, y: -10 }}
         >
           {activeTab === 'users' && renderMembership()}
+          {activeTab === 'database' && renderDatabaseBackup()}
         </motion.div>
       </AnimatePresence>
 
