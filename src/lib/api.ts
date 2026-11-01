@@ -22,4 +22,28 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * Runs when a request FAILS. Pages show `err.response.data.error` to the user, so we
+ * make sure it is always plain text. Some errors (e.g. Vercel's own "500" page) send
+ * an object like { code, message } or an HTML page instead. Showing an object directly
+ * crashes React and leaves a blank white page.
+ */
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const response = error.response;
+    if (response) {
+      const data = response.data;
+      if (data && typeof data === 'object' && !(data instanceof Blob) && typeof data.error === 'string') {
+        // Normal error from our own server: already a text message
+      } else if (data && typeof data === 'object' && data.error && typeof data.error === 'object') {
+        response.data = { error: String(data.error.message || `Server error (${response.status})`) };
+      } else {
+        response.data = { error: `Server error (${response.status}). Please try again later.` };
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

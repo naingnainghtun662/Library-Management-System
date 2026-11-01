@@ -38,11 +38,13 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { createServer as createViteServer } from 'vite';
 import { eq, and, or, like, sql, desc, asc, inArray, gte } from 'drizzle-orm';
-import * as schema from './src/db/librarydb.ts';
-import { getDatabase, LibraryDb } from './server/database.ts';
-import { buildSqlBackup } from './server/backup.ts';
+// Note: local files are imported with a ".js" ending even though they are ".ts" files.
+// On Vercel every .ts file is compiled to .js separately, and Node.js (ES modules)
+// needs the exact file name. TypeScript, tsx and esbuild all map ".js" to the ".ts" source.
+import * as schema from './src/db/librarydb.js';
+import { getDatabase, LibraryDb } from './server/database.js';
+import { buildSqlBackup } from './server/backup.js';
 
 // ----------------------------------------------------------------------------
 // SECURITY SETTING: the secret key used to sign login tokens (JWT)
@@ -1095,10 +1097,17 @@ async function startServer() {
   // ==========================================================================
   // SERVING THE REACT APP
   // ==========================================================================
+  // Vercel:      the React files are served by Vercel's CDN, so Express only handles /api.
   // Development: Vite compiles the React code on the fly (with live reload).
   // Production:  the pre-built files in /dist are served as static files.
   // Any other URL returns index.html so React Router can show the right page.
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.VERCEL) {
+    // nothing to serve here
+  } else if (process.env.NODE_ENV !== 'production') {
+    // Vite is loaded only in development. The module name is kept in a variable so that
+    // Vercel does not bundle the (large) Vite package into the serverless function.
+    const viteModuleName = 'vite';
+    const { createServer: createViteServer } = await import(viteModuleName);
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
@@ -1116,5 +1125,31 @@ async function startServer() {
   return app;
 }
 
-// Exported so that api/index.ts (Vercel) can reuse the same app.
-export default startServer();
+// ----------------------------------------------------------------------------
+// STARTING THE APP
+// ----------------------------------------------------------------------------
+let appPromise: Promise<express.Express> | null = null;
+
+/**
+ * Returns the Express app, starting it the first time it is called.
+ * If start-up fails (e.g. the database can't be reached), the next call tries again
+ * instead of staying broken. Used by api/index.ts on Vercel.
+ */
+export function getApp(): Promise<express.Express> {
+  if (!appPromise) {
+    appPromise = startServer().catch((error) => {
+      appPromise = null;
+      throw error;
+    });
+  }
+  return appPromise;
+}
+
+// On your own PC (npm run dev / npm start) start straight away and stop with a clear
+// message if something is wrong, e.g. XAMPP's MySQL is not running.
+if (!process.env.VERCEL) {
+  getApp().catch((error) => {
+    console.error('Server failed to start:', error.message);
+    process.exit(1);
+  });
+}
